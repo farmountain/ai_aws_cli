@@ -4,14 +4,8 @@ from __future__ import annotations
 
 import fnmatch
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
-
 from ..errors import ProtectedProfileError
 from .tier_table import TIER_3_SUBSTRINGS, TIER_TABLE
-
-console = Console()
 
 # EC2 commands that support --dry-run (can be expanded)
 _DRY_RUN_PREFIXES = (
@@ -98,6 +92,12 @@ def apply_safety_gate(
           (or auto-confirm with --yes)
       3 → refuse unless accept_responsibility=True, then falls through to tier-2 flow
     """
+    from rich.console import Console  # noqa: PLC0415
+    from rich.panel import Panel  # noqa: PLC0415
+    from rich.prompt import Confirm, Prompt  # noqa: PLC0415
+
+    console = Console()
+
     safety = getattr(config, "safety", None)
     auto_execute_tier: int = int(getattr(safety, "auto_execute_tier", 0))
     protected_profiles: list[str] = list(getattr(safety, "protected_profiles", []))

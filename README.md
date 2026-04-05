@@ -29,6 +29,7 @@ Lists all S3 buckets in your account.
 ## Table of Contents
 
 - [How It Works](#how-it-works)
+- [Using with Claude Code (MCP)](#using-with-claude-code-mcp)
 - [Value Stream: User-Initiated vs Agentic Actions](#value-stream-user-initiated-vs-agentic-actions)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
@@ -64,6 +65,102 @@ Every `aaws` invocation follows a six-stage pipeline. Some stages are **user-ini
                                    (on error) Agent generates recovery advice
  Read error + suggestion <───────
 ```
+
+---
+
+## Using with Claude Code (MCP)
+
+**Use `aaws` with your Claude Code subscription — no API keys, no LLM config, zero extra cost.**
+
+Instead of `aaws` calling an LLM directly, Claude Code becomes the LLM. The `aaws` MCP server provides safety classification, command execution, and output formatting as tools that Claude Code calls.
+
+```
+ Standalone CLI:                     MCP Mode:
+ User -> aaws -> LLM (you pay)      User -> Claude Code (subscription) -> aaws MCP tools
+                -> AWS CLI                                               -> AWS CLI
+```
+
+### Setup
+
+```bash
+# Install with MCP support
+pip install aaws[mcp]
+
+# Register with Claude Code (one-time)
+claude mcp add --scope user aaws -- python -m aaws.mcp_server
+```
+
+Or add a project-scoped `.mcp.json` (version-controlled, shared with team):
+
+```json
+{
+  "mcpServers": {
+    "aaws": {
+      "command": "python",
+      "args": ["-m", "aaws.mcp_server"]
+    }
+  }
+}
+```
+
+Verify with `/mcp` inside Claude Code to see the tools listed.
+
+### Available MCP Tools
+
+| Tool | Purpose | LLM Needed? |
+|------|---------|-------------|
+| `classify_aws_command` | Risk tier classification (0-3) for any AWS CLI command | No (static table) |
+| `execute_aws_command` | Safe subprocess execution with profile/region injection | No |
+| `format_aws_output` | JSON shape detection -> plain-text tables/cards | No |
+| `list_safety_tiers` | Browse known command risk tiers by service | No |
+| `check_aws_environment` | Verify AWS CLI, active profile, region | No |
+
+### Example Conversation in Claude Code
+
+```
+You: List my S3 buckets in us-west-2
+
+Claude Code:
+  1. Calls check_aws_environment() -> {aws_cli_available: true, active_profile: "default"}
+  2. Calls classify_aws_command("aws s3api list-buckets --output json")
+     -> {tier: 0, tier_label: "Read-only", should_confirm: false}
+  3. Calls execute_aws_command("aws s3api list-buckets --output json", region="us-west-2")
+     -> {stdout: '{"Buckets": [...]}', success: true}
+  4. Calls format_aws_output(stdout)
+     -> Formatted table with bucket names and dates
+
+You: Now delete the one named old-logs
+
+Claude Code:
+  1. Calls classify_aws_command("aws s3 rb s3://old-logs --force")
+     -> {tier: 2, tier_label: "Destructive", should_confirm: true}
+  2. Asks: "This is a destructive operation (tier 2). Delete bucket old-logs?"
+  3. You confirm
+  4. Calls execute_aws_command(...)
+```
+
+### What Changes vs Standalone CLI
+
+| Aspect | Standalone CLI | MCP Mode |
+|--------|---------------|----------|
+| LLM provider | You configure (Bedrock/OpenAI) | Claude Code subscription (free) |
+| NL translation | aaws translator.py | Claude Code LLM |
+| Session memory | In-process, 10-turn limit | Claude Code built-in (full context) |
+| Multi-step workflows | One command at a time | Claude Code orchestrates multiple |
+| Error interpretation | LLM call per error | Claude Code reasons over stderr |
+| Configuration | `aaws config init` required | Just register MCP server |
+
+### AWS Cloud Engineering Lifecycle (MCP)
+
+| Lifecycle Stage | Standalone CLI | + MCP with Claude Code |
+|---|---|---|
+| **Discovery** | Query-based | + Autonomous inventory, cross-service |
+| **Provisioning** | Single-command | + Multi-step with dependency ordering |
+| **Monitoring** | Snapshot queries | + Conversational drill-down |
+| **Troubleshooting** | Hardcoded + LLM errors | + Autonomous log/metric investigation |
+| **Maintenance** | Manual delete/resize | + Agent finds waste, suggests optimization |
+| **Security** | CLI pass-through | + Permission auditing |
+| **Disaster Recovery** | Single-command backup | + Orchestrated DR workflows |
 
 ---
 

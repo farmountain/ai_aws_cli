@@ -37,7 +37,7 @@ def test_tier0_no_prompt_needed():
 # ── Tier 1: simple y/n ──────────────────────────────────────────────────────
 
 
-@patch("aaws.safety.classifier.Confirm.ask", return_value=True)
+@patch("rich.prompt.Confirm.ask", return_value=True)
 def test_tier1_confirm_yes(mock_confirm):
     result = apply_safety_gate(
         "aws s3api create-bucket --bucket test", 1, "Creates bucket", "default", _config()
@@ -46,7 +46,7 @@ def test_tier1_confirm_yes(mock_confirm):
     mock_confirm.assert_called_once()
 
 
-@patch("aaws.safety.classifier.Confirm.ask", return_value=False)
+@patch("rich.prompt.Confirm.ask", return_value=False)
 def test_tier1_confirm_no(mock_confirm):
     result = apply_safety_gate(
         "aws s3api create-bucket --bucket test", 1, "Creates bucket", "default", _config()
@@ -65,8 +65,8 @@ def test_tier1_auto_confirm_with_yes_flag():
 # ── Tier 2: warning + type "yes" ────────────────────────────────────────────
 
 
-@patch("aaws.safety.classifier.Prompt.ask", return_value="yes")
-@patch("aaws.safety.classifier.Confirm.ask", return_value=False)  # decline dry-run
+@patch("rich.prompt.Prompt.ask", return_value="yes")
+@patch("rich.prompt.Confirm.ask", return_value=False)  # decline dry-run
 def test_tier2_confirm_yes(mock_dry, mock_prompt):
     result = apply_safety_gate(
         "aws ec2 terminate-instances --instance-ids i-abc", 2,
@@ -75,8 +75,8 @@ def test_tier2_confirm_yes(mock_dry, mock_prompt):
     assert result is True
 
 
-@patch("aaws.safety.classifier.Prompt.ask", return_value="")
-@patch("aaws.safety.classifier.Confirm.ask", return_value=False)  # decline dry-run
+@patch("rich.prompt.Prompt.ask", return_value="")
+@patch("rich.prompt.Confirm.ask", return_value=False)  # decline dry-run
 def test_tier2_confirm_cancel(mock_dry, mock_prompt):
     result = apply_safety_gate(
         "aws ec2 terminate-instances --instance-ids i-abc", 2,
@@ -93,7 +93,7 @@ def test_tier2_auto_confirm_with_yes_flag():
     assert result is True
 
 
-@patch("aaws.safety.classifier.Confirm.ask", return_value=True)  # accept dry-run
+@patch("rich.prompt.Confirm.ask", return_value=True)  # accept dry-run
 def test_tier2_dry_run_offered_for_ec2(mock_confirm):
     result = apply_safety_gate(
         "aws ec2 terminate-instances --instance-ids i-abc", 2,
@@ -104,7 +104,7 @@ def test_tier2_dry_run_offered_for_ec2(mock_confirm):
     assert was_dry_run_requested() is True
 
 
-@patch("aaws.safety.classifier.Prompt.ask", return_value="yes")
+@patch("rich.prompt.Prompt.ask", return_value="yes")
 def test_tier2_no_dry_run_for_non_ec2(mock_prompt):
     # S3 delete should NOT offer --dry-run
     result = apply_safety_gate(
@@ -124,7 +124,7 @@ def test_tier3_refused_by_default():
     assert result is False
 
 
-@patch("aaws.safety.classifier.Prompt.ask", return_value="yes")
+@patch("rich.prompt.Prompt.ask", return_value="yes")
 def test_tier3_override_with_accept_responsibility(mock_prompt):
     result = apply_safety_gate(
         "aws s3 rm s3://bucket --recursive", 3,
@@ -134,7 +134,7 @@ def test_tier3_override_with_accept_responsibility(mock_prompt):
     assert result is True
 
 
-@patch("aaws.safety.classifier.Prompt.ask", return_value="")
+@patch("rich.prompt.Prompt.ask", return_value="")
 def test_tier3_override_but_cancel(mock_prompt):
     result = apply_safety_gate(
         "aws s3 rm s3://bucket --recursive", 3,
@@ -169,7 +169,7 @@ def test_auto_execute_tier_1():
 def test_auto_execute_tier_does_not_bypass_tier2():
     """auto_execute_tier=1 should NOT auto-execute tier 2."""
     # Will need interactive prompt, so we mock it
-    with patch("aaws.safety.classifier.Prompt.ask", return_value="yes"):
+    with patch("rich.prompt.Prompt.ask", return_value="yes"):
         result = apply_safety_gate(
             "aws s3 rb s3://bucket", 2, "Removes bucket", "default",
             _config(auto_execute_tier=1),
@@ -199,7 +199,7 @@ def test_protected_profile_allows_reads():
 
 def test_unprotected_profile_allows_writes():
     config = _config(protected_profiles=["prod-*"])
-    with patch("aaws.safety.classifier.Confirm.ask", return_value=True):
+    with patch("rich.prompt.Confirm.ask", return_value=True):
         result = apply_safety_gate(
             "aws s3api create-bucket --bucket test", 1, "Creates bucket",
             "dev", config,

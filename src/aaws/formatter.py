@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+from io import StringIO
 from typing import Any
 
 from rich.console import Console
@@ -74,6 +75,33 @@ def format_output(stdout: str, *, raw: bool = False) -> None:
         return
 
     _render_value(data)
+
+
+def format_to_string(stdout: str) -> str:
+    """Format AWS CLI output to a plain-text string (for MCP / non-terminal use).
+
+    Reuses all existing rendering logic but captures output to a string
+    instead of printing to the terminal. No ANSI escape codes in output.
+    """
+    global console  # noqa: PLW0602
+
+    if not stdout or not stdout.strip():
+        return "No results."
+
+    try:
+        data = json.loads(stdout)
+    except json.JSONDecodeError:
+        return stdout.rstrip()
+
+    buf = StringIO()
+    old_console = console
+    console = Console(file=buf, force_terminal=False, no_color=True, width=120)  # type: ignore[assignment]
+    try:
+        _render_value(data)
+    finally:
+        console = old_console  # type: ignore[assignment]
+
+    return buf.getvalue().rstrip()
 
 
 def render_error(stderr: str, suggestion: str | None = None) -> None:
