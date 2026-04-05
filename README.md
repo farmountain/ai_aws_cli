@@ -82,6 +82,8 @@ Instead of `aaws` calling an LLM directly, Claude Code becomes the LLM. The `aaw
 
 ### Setup
 
+Prerequisite: AWS CLI v2 must be installed and configured (see [Installation](#step-1-install-aws-cli-v2) above).
+
 ```bash
 # Install with MCP support
 pip install aaws[mcp]
@@ -241,24 +243,111 @@ The following maps every activity in the development and usage lifecycle to who 
 
 ## Installation
 
-### Prerequisites
+### Step 1: Install AWS CLI v2
 
-- **Python 3.11+**
-- **AWS CLI v2** installed and configured (`aws configure`)
-- An LLM provider: **AWS Bedrock** (default, uses your existing AWS creds) or **OpenAI** (requires API key)
+`aaws` requires the AWS CLI to be installed and in your PATH. It delegates all AWS operations to the `aws` command.
 
-### Install from PyPI
+**macOS:**
+
+```bash
+brew install awscli
+```
+
+**Windows:**
+
+Download and run the installer from https://awscli.amazonaws.com/AWSCLIV2.msi
+
+Or via winget:
+
+```bash
+winget install Amazon.AWSCLI
+```
+
+**Linux (x86_64):**
+
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+```
+
+**Verify:**
+
+```bash
+aws --version
+# aws-cli/2.x.x Python/3.x.x ...
+```
+
+### Step 2: Configure AWS Credentials
+
+You need at least one AWS profile configured with valid credentials.
+
+**Option A: IAM Access Keys (simplest)**
+
+```bash
+aws configure
+```
+
+You'll be prompted for:
+
+```
+AWS Access Key ID [None]: AKIAIOSFODNN7EXAMPLE
+AWS Secret Access Key [None]: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+Default region name [None]: us-east-1
+Default output format [None]: json
+```
+
+**Option B: AWS SSO (recommended for organizations)**
+
+```bash
+aws configure sso
+```
+
+Follow the browser login flow. Then activate the session:
+
+```bash
+aws sso login --profile your-profile-name
+```
+
+**Option C: Environment Variables (CI/CD)**
+
+```bash
+export AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+export AWS_DEFAULT_REGION=us-east-1
+```
+
+**Verify credentials work:**
+
+```bash
+aws sts get-caller-identity
+# Should return your account ID, ARN, and user ID
+```
+
+### Step 3: Install aaws
+
+**Requirements:** Python 3.11+, AWS CLI v2 (configured above)
 
 The package is published at [pypi.org/project/aaws](https://pypi.org/project/aaws/).
 
+**Standalone CLI** (needs an LLM provider — Bedrock or OpenAI):
+
 ```bash
 pip install aaws
+```
+
+**With Claude Code MCP support** (use your Anthropic subscription, no API key needed):
+
+```bash
+pip install aaws[mcp]
+claude mcp add --scope user aaws -- python -m aaws.mcp_server
 ```
 
 Verify the installation:
 
 ```bash
 aaws --help
+aws sts get-caller-identity   # confirm AWS creds work
 ```
 
 ### Upgrade to latest version
@@ -272,7 +361,7 @@ pip install --upgrade aaws
 ```bash
 git clone https://github.com/farmountain/ai_aws_cli.git
 cd ai_aws_cli
-pip install -e ".[dev]"
+pip install -e ".[dev,mcp]"
 ```
 
 ---
