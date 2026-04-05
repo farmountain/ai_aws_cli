@@ -82,6 +82,13 @@ def main(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Show generated command without executing it")
     ] = False,
+    yes: Annotated[
+        bool,
+        typer.Option(
+            "--yes", "-y",
+            help="Auto-confirm tier 1-2 commands (skip interactive prompts)",
+        ),
+    ] = False,
     accept_responsibility: Annotated[
         bool,
         typer.Option(
@@ -147,6 +154,7 @@ def main(
             effective_profile,
             config,
             accept_responsibility=accept_responsibility,
+            auto_confirm=yes,
         )
     except ProtectedProfileError as e:
         console.print(f"[bold red]Blocked:[/bold red] {e}")

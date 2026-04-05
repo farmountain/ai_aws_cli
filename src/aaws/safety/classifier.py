@@ -83,6 +83,7 @@ def apply_safety_gate(
     config: object,
     *,
     accept_responsibility: bool = False,
+    auto_confirm: bool = False,
 ) -> bool:
     """
     Apply the appropriate confirmation gate for the given risk tier.
@@ -92,8 +93,9 @@ def apply_safety_gate(
 
     Tier behaviour:
       0 → auto-execute (no prompt)
-      1 → show command + [y/n] confirm
+      1 → show command + [y/n] confirm (or auto-confirm with --yes)
       2 → show warning panel + type "yes" confirm + optional --dry-run offer
+          (or auto-confirm with --yes)
       3 → refuse unless accept_responsibility=True, then falls through to tier-2 flow
     """
     safety = getattr(config, "safety", None)
@@ -118,6 +120,9 @@ def apply_safety_gate(
 
     # ── Tier 1: simple y/n ───────────────────────────────────────────────────
     if tier == 1:
+        if auto_confirm:
+            console.print("[dim]Auto-confirmed (--yes)[/dim]")
+            return True
         return Confirm.ask("Run this command?")
 
     # ── Tier 2: warning + type "yes" ─────────────────────────────────────────
@@ -130,6 +135,10 @@ def apply_safety_gate(
                 title="Destructive Operation",
             )
         )
+
+        if auto_confirm:
+            console.print("[dim]Auto-confirmed (--yes)[/dim]")
+            return True
 
         # Offer --dry-run for EC2 commands that support it
         cmd_lower = command.lower()

@@ -1,6 +1,12 @@
 # aaws - AI-Assisted AWS CLI
 
+[![PyPI version](https://img.shields.io/pypi/v/aaws.svg)](https://pypi.org/project/aaws/)
+[![Python 3.11+](https://img.shields.io/pypi/pyversions/aaws.svg)](https://pypi.org/project/aaws/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 **Natural language in, AWS command out.**
+
+`pip install aaws` -- [pypi.org/project/aaws](https://pypi.org/project/aaws/)
 
 Stop context-switching to AWS docs. Describe what you want in plain English and `aaws` generates, explains, and safely executes the correct AWS CLI command.
 
@@ -92,7 +98,7 @@ The following maps every activity in the development and usage lifecycle to who 
 | 16 | Fallback to LLM-assigned tier | Agent | Unknown commands use the LLM's risk assessment |
 | 17 | Check protected profile | Agent | Blocks all writes on `prod-*` or user-defined glob patterns |
 | 18 | Show command + explanation | Agent | Displays the generated command with plain-English explanation |
-| 19 | Confirm or cancel execution | User | Tier 0: auto-run. Tier 1: y/n. Tier 2: type "yes". Tier 3: refused |
+| 19 | Confirm or cancel execution | User | Tier 0: auto-run. Tier 1: y/n. Tier 2: type "yes". Tier 3: refused. `--yes` auto-confirms 1-2 |
 | 20 | Offer `--dry-run` for EC2 | Agent | For destructive EC2 commands, offers to validate with `--dry-run` first |
 | 21 | Execute via subprocess | Agent | `shlex.split()` + `subprocess.run(shell=False)` — no injection possible |
 | 22 | Detect output shape | Agent | Inspects JSON: list -> table, dict -> card, empty -> "No results." |
@@ -146,15 +152,29 @@ The following maps every activity in the development and usage lifecycle to who 
 
 ### Install from PyPI
 
+The package is published at [pypi.org/project/aaws](https://pypi.org/project/aaws/).
+
 ```bash
 pip install aaws
+```
+
+Verify the installation:
+
+```bash
+aaws --help
+```
+
+### Upgrade to latest version
+
+```bash
+pip install --upgrade aaws
 ```
 
 ### Install from source (development)
 
 ```bash
-git clone https://github.com/yourorg/aaws.git
-cd aaws
+git clone https://github.com/farmountain/ai_aws_cli.git
+cd ai_aws_cli
 pip install -e ".[dev]"
 ```
 
@@ -283,6 +303,7 @@ aaws [OPTIONS] "<natural language request>"
 | `--region`, `-r` | Override AWS region for this invocation |
 | `--raw` | Output raw JSON (no tables, no formatting) |
 | `--dry-run` | Show the generated command without executing |
+| `--yes`, `-y` | Auto-confirm tier 1-2 commands (skip interactive prompts) |
 | `--i-accept-responsibility` | Override tier-3 catastrophic operation refusal |
 
 ### `aaws explain "<command>"`
@@ -637,6 +658,26 @@ aaws --raw "show my IAM users" | jq '.Users[] | select(.UserName | startswith("t
 
 ---
 
+### Flow 11: CI/CD Automation with --yes Flag
+
+```bash
+# In a CI pipeline, skip interactive confirmations for tier 1-2 commands
+aaws --yes "tag instance i-abc123 with Environment=staging"
+
+# Combine with --raw for machine-readable output
+aaws --yes --raw "create an S3 bucket named build-artifacts-$(date +%s)" | jq .
+
+# Configure entirely via environment variables (no config file needed)
+export AAWS_LLM_PROVIDER=bedrock
+export AAWS_AWS_REGION=us-east-1
+aaws --yes "create a CloudWatch alarm for high CPU on instance i-abc123"
+```
+
+Note: `--yes` auto-confirms tier 1 (write) and tier 2 (destructive) commands.
+It does **NOT** bypass tier 3 (catastrophic) refusal -- that still requires `--i-accept-responsibility`.
+
+---
+
 ## Safety Model
 
 ### Risk Tiers
@@ -644,9 +685,9 @@ aaws --raw "show my IAM users" | jq '.Users[] | select(.UserName | startswith("t
 | Tier | Label | Examples | Gate | User Action |
 |------|-------|---------|------|-------------|
 | **0** | Read-only | `describe`, `list`, `get`, `head` | Auto-execute | None |
-| **1** | Write | `create`, `put`, `update`, `start`, `tag` | Show + y/n | Press `y` |
-| **2** | Destructive | `delete`, `terminate`, `detach`, `rm` | Warn + type "yes" + dry-run offer | Type `yes` |
-| **3** | Catastrophic | Bulk delete, org-level, IAM nuke | **Refused** | Re-run with `--i-accept-responsibility` |
+| **1** | Write | `create`, `put`, `update`, `start`, `tag` | Show + y/n | Press `y` (or `--yes`) |
+| **2** | Destructive | `delete`, `terminate`, `detach`, `rm` | Warn + type "yes" + dry-run offer | Type `yes` (or `--yes`) |
+| **3** | Catastrophic | Bulk delete, org-level, IAM nuke | **Refused** | `--i-accept-responsibility` (not `--yes`) |
 
 ### Classification Strategy
 
@@ -778,7 +819,6 @@ src/aaws/
 ### Areas for improvement
 
 - **No command history persistence**: Session history lives in memory only. Restarting loses all context. A `~/.aaws/history.json` with last N sessions would help.
-- **No `--yes` flag for automation**: CI/CD pipelines can't auto-confirm tier 1-2 commands. `auto_execute_tier` in config works but requires file/env setup.
 - **No streaming output**: Long-running commands (e.g., `aws s3 sync`) show nothing until completion. Streaming stdout would improve perceived latency.
 - **No command validation against AWS help**: The agent trusts the LLM to produce valid flags. A post-generation check against `aws <service> help` output would catch hallucinated flags.
 - **Protected profile patterns are config-only**: No `aaws safety add-profile "prod-*"` command to manage them interactively.
@@ -802,8 +842,8 @@ This is the right balance. A more autonomous agent (auto-executing writes) would
 ### Setup
 
 ```bash
-git clone https://github.com/yourorg/aaws.git
-cd aaws
+git clone https://github.com/farmountain/ai_aws_cli.git
+cd ai_aws_cli
 pip install -e ".[dev]"
 ```
 

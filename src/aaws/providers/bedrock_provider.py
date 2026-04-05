@@ -6,7 +6,11 @@ from typing import Any
 
 import boto3
 from botocore.config import Config as BotocoreConfig
-from botocore.exceptions import ClientError
+from botocore.exceptions import (
+    ClientError,
+    ConnectTimeoutError,
+    ReadTimeoutError,
+)
 
 from ..errors import AawsError
 from .base import LLMResponse, Message, TOOL_SCHEMA
@@ -63,6 +67,10 @@ class BedrockProvider:
                     "toolChoice": {"tool": {"name": tool_schema["name"]}},
                 },
             )
+        except (ReadTimeoutError, ConnectTimeoutError) as e:
+            raise AawsError(
+                "Request timed out. Check your network connection and try again."
+            ) from e
         except ClientError as e:
             code = e.response["Error"]["Code"]
             if code in ("AccessDeniedException", "ValidationException") and "model" in str(e).lower():

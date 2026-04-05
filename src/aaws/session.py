@@ -100,9 +100,19 @@ def run_session(config: object, profile: str, region: str) -> None:
         # Execute
         result = execute(response.command)
 
-        # Update history
+        # Update history — include execution output so the LLM can resolve
+        # follow-up references like "show details about the first one"
         history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": response.command})
+        assistant_content = f"Command: {response.command}\n{response.explanation}"
+        if result.success and result.stdout:
+            # Truncate large outputs to keep history context manageable
+            output_preview = result.stdout[:2000]
+            if len(result.stdout) > 2000:
+                output_preview += "\n... (truncated)"
+            assistant_content += f"\nOutput:\n{output_preview}"
+        elif not result.success and result.stderr:
+            assistant_content += f"\nError: {result.stderr[:500]}"
+        history.append({"role": "assistant", "content": assistant_content})
 
         # Render output
         if result.success:
