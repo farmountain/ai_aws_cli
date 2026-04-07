@@ -1,0 +1,10 @@
+runtime:
+  project_name: "ai_aws_cli"
+  storage_root: "storage/"
+
+adapters:
+  change_store:
+    implementation: "FilesystemChangeStore"
+    config:
+      changes_path: "openspec/changes/"
+      archive_path: "openspec/changes/archive/"

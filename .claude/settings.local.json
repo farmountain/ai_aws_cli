@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx openspec:*)",
+      "Bash(openspec --version)",
+      "Bash(openspec new:*)",
+      "Bash(openspec status:*)",
+      "Bash(openspec instructions:*)",
+      "Bash(ls openspec/changes/*/)",
+      "Bash(openspec list:*)",
+      "Bash(aureus:*)",
+      "Bash(python:*)",
+      "Bash(gh pr:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(docker build:*)",
+      "Bash(grep -r \"^[^# \\\\t].*= \" src/aaws/*.py)",
+      "Bash(podman build:*)",
+      "Bash(podman machine:*)",
+      "Bash(podman run:*)"
+    ]
+  },
+  "disabledMcpjsonServers": [
+    "aaws"
+  ]
+}

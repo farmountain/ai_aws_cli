@@ -215,29 +215,30 @@ The following maps every activity in the development and usage lifecycle to who 
 | 29 | Type follow-up requests | User | Conversational input referencing prior context |
 | 30 | Maintain conversation history | Agent | Appends each exchange, bounded to last 10 for LLM context |
 | 31 | Translate with history context | Agent | LLM sees prior conversation for multi-turn refinement |
-| 32 | Full safety pipeline per turn | Agent | Every command goes through classify -> gate -> execute -> format |
-| 33 | Exit session | User | Type `exit`/`quit` or Ctrl+C |
-| 34 | Handle Ctrl+C gracefully | Agent | Catches KeyboardInterrupt, prints "Goodbye.", no stack trace |
+| 32 | Rate-limit check | Agent | Token-bucket limiter throttles requests exceeding `max_per_minute`; shows retry delay |
+| 33 | Full safety pipeline per turn | Agent | Every command goes through classify -> gate -> execute -> format |
+| 34 | Exit session | User | Type `exit`/`quit` or Ctrl+C |
+| 35 | Handle Ctrl+C gracefully | Agent | Catches KeyboardInterrupt, prints "Goodbye.", no stack trace |
 
 ### Utility Flows
 
 | # | Activity | Owner | Description |
 |---|----------|-------|-------------|
-| 35 | Explain existing command | User | `aaws explain "aws ec2 describe-instances --filters ..."` |
-| 36 | LLM generates explanation | Agent | Describes what the command does, each flag, and safety caveats |
-| 37 | View resolved config | User | `aaws config show` — effective config with secrets masked |
-| 38 | Use `--raw` for scripting | User | `aaws --raw "list my buckets" \| jq '.Buckets[].Name'` |
-| 39 | Use `--dry-run` to preview | User | Shows generated command without executing |
-| 40 | Override tier-3 refusal | User | `aaws --i-accept-responsibility "delete all IAM users"` |
+| 36 | Explain existing command | User | `aaws explain "aws ec2 describe-instances --filters ..."` |
+| 37 | LLM generates explanation | Agent | Describes what the command does, each flag, and safety caveats |
+| 38 | View resolved config | User | `aaws config show` — effective config with secrets masked |
+| 39 | Use `--raw` for scripting | User | `aaws --raw "list my buckets" \| jq '.Buckets[].Name'` |
+| 40 | Use `--dry-run` to preview | User | Shows generated command without executing |
+| 41 | Override tier-3 refusal | User | `aaws --i-accept-responsibility "delete all IAM users"` |
 
 ### CI/CD and Automation
 
 | # | Activity | Owner | Description |
 |---|----------|-------|-------------|
-| 41 | Configure via env vars only | User | Set `AAWS_LLM_PROVIDER`, `AAWS_AWS_REGION`, etc. — no config file needed |
-| 42 | Pipe raw output to tools | User | `aaws --raw "..." \| jq ...` for scripted consumption |
-| 43 | Tests on push (GitHub Actions) | Agent | Lint (ruff) + type check (mypy) + pytest across Python 3.11-3.13 |
-| 44 | Publish to PyPI on tag | Agent | `hatch build` + trusted publishing on `v*` tags |
+| 42 | Configure via env vars only | User | Set `AAWS_LLM_PROVIDER`, `AAWS_AWS_REGION`, etc. — no config file needed |
+| 43 | Pipe raw output to tools | User | `aaws --raw "..." \| jq ...` for scripted consumption |
+| 44 | Tests on push (GitHub Actions) | Agent | Lint (ruff) + type check (mypy) + pytest across Python 3.11-3.13 |
+| 45 | Publish to PyPI on tag | Agent | `hatch build` + trusted publishing on `v*` tags |
 
 ---
 
@@ -451,6 +452,12 @@ output:
   format: auto               # "auto" detects tables/cards/JSON
   raw: false                 # true = always output raw JSON
   color: true
+
+session:
+  rate_limit:
+    enabled: true            # Set to false to disable rate limiting
+    max_per_minute: 20       # Max LLM translation requests per minute
+    burst: 5                 # Initial burst capacity (rapid follow-ups)
 ```
 
 ### Environment variable overrides
@@ -470,6 +477,9 @@ Every config field can be overridden with `AAWS_`-prefixed env vars. Useful for 
 | `AAWS_OUTPUT_FORMAT` | `output.format` |
 | `AAWS_OUTPUT_RAW` | `output.raw` |
 | `AAWS_OUTPUT_COLOR` | `output.color` |
+| `AAWS_SESSION_RATE_LIMIT_ENABLED` | `session.rate_limit.enabled` |
+| `AAWS_SESSION_RATE_LIMIT_MAX_PER_MINUTE` | `session.rate_limit.max_per_minute` |
+| `AAWS_SESSION_RATE_LIMIT_BURST` | `session.rate_limit.burst` |
 
 ---
 
@@ -965,6 +975,8 @@ src/aaws/
   config.py            # Pydantic models, YAML loader, env var resolution
   errors.py            # Error classification, credential messages, LLM interpretation
   session.py           # Interactive REPL with bounded conversation history
+  rate_limit.py        # Token-bucket rate limiter for session mode
+  audit.py             # Audit logging (append-only JSONL)
   providers/
     __init__.py         # get_provider() factory
     base.py             # LLMProvider protocol, TOOL_SCHEMA, LLMResponse, Message

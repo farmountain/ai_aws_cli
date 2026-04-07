@@ -11,19 +11,80 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 import os
+import shlex
 import shutil
 import subprocess
+import time
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 from . import __version__
 
+logger = logging.getLogger("aaws.mcp_server")
+
 mcp = FastMCP(
     "aaws",
     instructions="AI-assisted AWS CLI — classify, execute, and format AWS commands safely.",
 )
+
+# ── Module-level config (loaded once in main()) ────────────────────────────
+
+_config: Any = None  # AawsConfig instance, set in main()
+_audit_config: Any = None  # AuditConfig instance for audit subsystem
+
+
+def _get_config() -> Any:
+    """Return the cached config, falling back to safe defaults."""
+    global _config  # noqa: PLW0603
+    if _config is None:
+        from .config import AawsConfig  # noqa: PLC0415
+        _config = AawsConfig()
+    return _config
+
+
+def _get_audit_config() -> Any:
+    """Return the AuditConfig from the cached config."""
+    global _audit_config  # noqa: PLW0603
+    if _audit_config is not None:
+        return _audit_config
+    from .audit import AuditConfig  # noqa: PLC0415
+    cfg = _get_config()
+    audit_section = getattr(cfg, "audit", None)
+    if audit_section is not None:
+        _audit_config = AuditConfig(
+            enabled=getattr(audit_section, "enabled", True),
+            path=getattr(audit_section, "path", None),
+            max_size_mb=getattr(audit_section, "max_size_mb", 10),
+        )
+    else:
+        _audit_config = AuditConfig()
+    return _audit_config
+
+
+# ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _extract_profile(command: str, default: str) -> str:
+    """Parse --profile from the command string, returning the value if present.
+
+    Uses shlex.split to handle quoting. Returns *default* when --profile
+    is absent or has no value after the flag.
+    """
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return default
+
+    for i, token in enumerate(tokens):
+        if token == "--profile" and i + 1 < len(tokens):
+            return tokens[i + 1]
+    return default
+
+
+_TIER_LABELS = {0: "Read-only", 1: "Write", 2: "Destructive", 3: "Catastrophic"}
 
 
 # ── Tool 1: classify_aws_command ─────────────────────────────────────────────
@@ -31,7 +92,10 @@ mcp = FastMCP(
 
 @mcp.tool()
 def classify_aws_command(command: str) -> dict[str, Any]:
-    """Classify an AWS CLI command into a safety risk tier (0-3).
+    """Preview the safety risk tier of an AWS CLI command (0-3).
+
+    Use this as a lookahead tool to check the risk tier before presenting
+    a command to the user. This does NOT execute the command.
 
     Tiers:
       0 = Read-only (describe, list, get) — safe to auto-execute
@@ -39,22 +103,17 @@ def classify_aws_command(command: str) -> dict[str, Any]:
       2 = Destructive (delete, terminate, detach) — warn user strongly
       3 = Catastrophic (bulk delete, org-level ops) — refuse unless user insists
 
-    IMPORTANT: Always call this BEFORE execute_aws_command to check risk level.
-    For tier >= 1, confirm with the user before executing.
-    For tier 3, refuse unless the user explicitly insists.
-
     Args:
         command: The full AWS CLI command string (must start with 'aws ')
     """
     from .safety.classifier import classify  # noqa: PLC0415
 
     tier = classify(command, llm_tier=1)  # Unknown commands default to Write (conservative)
-    tier_labels = {0: "Read-only", 1: "Write", 2: "Destructive", 3: "Catastrophic"}
 
     return {
         "command": command,
         "tier": tier,
-        "tier_label": tier_labels.get(tier, "Unknown"),
+        "tier_label": _TIER_LABELS.get(tier, "Unknown"),
         "should_confirm": tier >= 1,
         "is_catastrophic": tier == 3,
     }
@@ -69,24 +128,26 @@ def execute_aws_command(
     profile: str = "default",
     region: str = "us-east-1",
 ) -> dict[str, Any]:
-    """Execute an AWS CLI command and return stdout, stderr, and exit code.
+    """Execute an AWS CLI command with server-side safety enforcement.
 
-    IMPORTANT SAFETY RULES — always call classify_aws_command first:
-    - Tier 0 (read-only): safe to execute without asking
-    - Tier 1 (write): ask the user for confirmation before executing
-    - Tier 2 (destructive): warn the user strongly, explain consequences
-    - Tier 3 (catastrophic): REFUSE to execute unless user explicitly insists
+    The command is classified before execution:
+    - Tier 0 (read-only): executed immediately, result returned.
+    - Tier >= 1: NOT executed. Returns classification with
+      ``requires_confirmation: true`` so the agent can confirm with the user
+      and then call ``execute_confirmed_aws_command``.
 
-    The command must start with 'aws'. Profile and region are injected as
-    --profile and --region flags if not already present.
+    The ``auto_execute_tier`` config setting is NOT applied in MCP mode —
+    all tier >= 1 commands require explicit confirmation via
+    ``execute_confirmed_aws_command``.
+
+    Profile and region are injected as --profile and --region flags if not
+    already present in the command.
 
     Args:
         command: The full AWS CLI command (must start with 'aws ')
         profile: AWS profile name to use
         region: AWS region to use
     """
-    from .executor import execute  # noqa: PLC0415
-
     if not command.strip().startswith("aws "):
         return {
             "stdout": "",
@@ -95,20 +156,166 @@ def execute_aws_command(
             "success": False,
         }
 
+    from .safety.classifier import classify, is_protected_profile  # noqa: PLC0415
+
+    tier = classify(command, llm_tier=1)
+
+    # Determine effective profile — embedded --profile takes precedence
+    effective_profile = _extract_profile(command, profile)
+
+    # Protected-profile check
+    config = _get_config()
+    protected_profiles: list[str] = list(
+        getattr(getattr(config, "safety", None), "protected_profiles", [])
+    )
+    if tier > 0 and is_protected_profile(effective_profile, protected_profiles):
+        return {
+            "stdout": "",
+            "stderr": f"Blocked: profile '{effective_profile}' is protected. "
+                      f"Write/destructive operations are not allowed on this profile.",
+            "exit_code": 1,
+            "success": False,
+            "tier": tier,
+            "tier_label": _TIER_LABELS.get(tier, "Unknown"),
+            "requires_confirmation": False,
+            "executed": False,
+            "blocked_by": "protected_profile",
+        }
+
+    # Tier >= 1: return classification, do NOT execute
+    if tier >= 1:
+        return {
+            "stdout": "",
+            "stderr": "",
+            "exit_code": 0,
+            "success": True,
+            "tier": tier,
+            "tier_label": _TIER_LABELS.get(tier, "Unknown"),
+            "requires_confirmation": True,
+            "is_catastrophic": tier == 3,
+            "executed": False,
+        }
+
+    # Tier 0: execute and return
+    from .executor import execute  # noqa: PLC0415
+
     # Inject --profile and --region if not already present
     if "--profile" not in command and profile != "default":
         command += f" --profile {profile}"
     if "--region" not in command:
         command += f" --region {region}"
 
-    result = execute(command)
+    # Audit
+    start = time.monotonic()
+    exit_code = 0
+    try:
+        result = execute(command)
+        exit_code = result.exit_code
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "success": result.success,
+            "tier": tier,
+            "tier_label": _TIER_LABELS.get(tier, "Unknown"),
+            "requires_confirmation": False,
+            "executed": True,
+        }
+    except KeyboardInterrupt:
+        exit_code = -2
+        raise
+    except Exception:
+        exit_code = -1
+        raise
+    finally:
+        _audit_command(command, tier, effective_profile, region, exit_code, start)
 
-    return {
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "exit_code": result.exit_code,
-        "success": result.success,
-    }
+
+# ── Tool 2b: execute_confirmed_aws_command ──────────────────────────────────
+
+
+@mcp.tool()
+def execute_confirmed_aws_command(
+    command: str,
+    profile: str = "default",
+    region: str = "us-east-1",
+) -> dict[str, Any]:
+    """Execute an AWS CLI command after the user has confirmed.
+
+    ONLY call this tool after:
+    1. Calling ``execute_aws_command`` and receiving ``requires_confirmation: true``
+    2. Showing the command and its risk tier to the user
+    3. Receiving explicit user confirmation to proceed
+
+    The command is re-classified for accurate audit logging. Protected-profile
+    rules are enforced.
+
+    Args:
+        command: The full AWS CLI command (must start with 'aws ')
+        profile: AWS profile name to use
+        region: AWS region to use
+    """
+    if not command.strip().startswith("aws "):
+        return {
+            "stdout": "",
+            "stderr": "Error: command must start with 'aws '",
+            "exit_code": 1,
+            "success": False,
+        }
+
+    from .safety.classifier import classify, is_protected_profile  # noqa: PLC0415
+
+    tier = classify(command, llm_tier=1)
+
+    # Determine effective profile — embedded --profile takes precedence
+    effective_profile = _extract_profile(command, profile)
+
+    # Protected-profile check
+    config = _get_config()
+    protected_profiles: list[str] = list(
+        getattr(getattr(config, "safety", None), "protected_profiles", [])
+    )
+    if tier > 0 and is_protected_profile(effective_profile, protected_profiles):
+        return {
+            "stdout": "",
+            "stderr": f"Blocked: profile '{effective_profile}' is protected. "
+                      f"Write/destructive operations are not allowed on this profile.",
+            "exit_code": 1,
+            "success": False,
+            "tier": tier,
+            "tier_label": _TIER_LABELS.get(tier, "Unknown"),
+            "blocked_by": "protected_profile",
+        }
+
+    from .executor import execute  # noqa: PLC0415
+
+    # Inject --profile and --region if not already present
+    if "--profile" not in command and profile != "default":
+        command += f" --profile {profile}"
+    if "--region" not in command:
+        command += f" --region {region}"
+
+    start = time.monotonic()
+    exit_code = 0
+    try:
+        result = execute(command)
+        exit_code = result.exit_code
+        return {
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+            "success": result.success,
+            "tier": tier,
+            "tier_label": _TIER_LABELS.get(tier, "Unknown"),
+        }
+    except KeyboardInterrupt:
+        exit_code = -2
+        raise
+    except Exception:
+        exit_code = -1
+        raise
+    finally:
+        _audit_command(command, tier, effective_profile, region, exit_code, start)
 
 
 # ── Tool 3: format_aws_output ───────────────────────────────────────────────
@@ -173,7 +380,7 @@ def check_aws_environment() -> dict[str, Any]:
     """Check the local AWS environment: CLI availability, active profile, region.
 
     Call this at the start of a session to verify the user's AWS setup
-    before running any commands.
+    before running any commands. Includes audit log health check.
     """
     aws_available = shutil.which("aws") is not None
 
@@ -194,11 +401,50 @@ def check_aws_environment() -> dict[str, Any]:
         except Exception:
             pass
 
+    # Audit health check
+    from .audit import check_writable  # noqa: PLC0415
+    audit_cfg = _get_audit_config()
+    audit_writable = check_writable(audit_cfg) if audit_cfg.enabled else True
+
     return {
         "aws_cli_available": aws_available,
         "active_profile": active_profile,
         "active_region": active_region or "not configured",
+        "audit_writable": audit_writable,
     }
+
+
+# ── Audit helper ─────────────────────────────────────────────────────────────
+
+
+def _audit_command(
+    command: str,
+    tier: int,
+    profile: str,
+    region: str,
+    exit_code: int,
+    start: float,
+) -> None:
+    """Write an audit entry if auditing is enabled."""
+    audit_cfg = _get_audit_config()
+    if not audit_cfg.enabled:
+        return
+    try:
+        from .audit import AuditEntry, append  # noqa: PLC0415
+        duration_ms = int((time.monotonic() - start) * 1000)
+        entry = AuditEntry(
+            command=command,
+            tier=tier,
+            profile=profile,
+            region=region,
+            exit_code=exit_code,
+            success=exit_code == 0,
+            mode="mcp",
+            duration_ms=duration_ms,
+        )
+        append(entry, audit_cfg)
+    except Exception as exc:
+        logger.warning("MCP audit failed: %s", exc)
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
@@ -206,6 +452,17 @@ def check_aws_environment() -> dict[str, Any]:
 
 def main() -> None:
     """Entry point for aaws-mcp command and python -m aaws.mcp_server."""
+    global _config  # noqa: PLW0603
+
+    # Load config once at startup, fall back to safe defaults
+    try:
+        from .config import load_config  # noqa: PLC0415
+        _config = load_config()
+    except Exception:
+        from .config import AawsConfig  # noqa: PLC0415
+        _config = AawsConfig()
+        logger.warning("Config not found, using safe defaults")
+
     mcp.run(transport="stdio")
 
 

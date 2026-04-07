@@ -176,7 +176,44 @@ def main(
         console.print("[dim]Cancelled.[/dim]")
         raise typer.Exit()
 
-    result = execute(response.command)
+    import time as _time  # noqa: PLC0415
+    from .audit import AuditConfig, AuditEntry, append as audit_append  # noqa: PLC0415
+
+    audit_cfg_section = getattr(config, "audit", None)
+    audit_cfg = AuditConfig(
+        enabled=getattr(audit_cfg_section, "enabled", True) if audit_cfg_section else True,
+        path=getattr(audit_cfg_section, "path", None) if audit_cfg_section else None,
+        max_size_mb=getattr(audit_cfg_section, "max_size_mb", 10) if audit_cfg_section else 10,
+    )
+
+    start = _time.monotonic()
+    exit_code = 0
+    try:
+        result = execute(response.command)
+        exit_code = result.exit_code
+    except KeyboardInterrupt:
+        exit_code = -2
+        raise
+    except Exception:
+        exit_code = -1
+        raise
+    finally:
+        if audit_cfg.enabled:
+            duration_ms = int((_time.monotonic() - start) * 1000)
+            audit_append(
+                AuditEntry(
+                    command=response.command,
+                    tier=tier,
+                    profile=effective_profile,
+                    region=effective_region,
+                    exit_code=exit_code,
+                    success=exit_code == 0,
+                    mode="cli",
+                    duration_ms=duration_ms,
+                ),
+                audit_cfg,
+            )
+
     if result.success:
         format_output(result.stdout, raw=effective_raw)
     else:

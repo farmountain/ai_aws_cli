@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "aaws": {
+      "command": "python",
+      "args": ["-m", "aaws.mcp_server"],
+      "transport": "stdio"
+    }
+  }
+}

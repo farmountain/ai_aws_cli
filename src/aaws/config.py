@@ -40,11 +40,29 @@ class OutputConfig(BaseModel):
     color: bool = True
 
 
+class AuditConfig(BaseModel):
+    enabled: bool = True
+    path: Optional[str] = None
+    max_size_mb: int = 10
+
+
+class RateLimitConfig(BaseModel):
+    enabled: bool = True
+    max_per_minute: int = 20
+    burst: int = 5
+
+
+class SessionConfig(BaseModel):
+    rate_limit: RateLimitConfig = RateLimitConfig()
+
+
 class AawsConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     aws: AWSConfig = AWSConfig()
     safety: SafetyConfig = SafetyConfig()
     output: OutputConfig = OutputConfig()
+    audit: AuditConfig = AuditConfig()
+    session: SessionConfig = SessionConfig()
 
 
 # ── Env var helpers ───────────────────────────────────────────────────────────
@@ -86,6 +104,9 @@ _ENV_OVERRIDES: dict[str, tuple[str, str]] = {
     "AAWS_OUTPUT_FORMAT": ("output", "format"),
     "AAWS_OUTPUT_RAW": ("output", "raw"),
     "AAWS_OUTPUT_COLOR": ("output", "color"),
+    "AAWS_SESSION_RATE_LIMIT_ENABLED": ("session", "rate_limit.enabled"),
+    "AAWS_SESSION_RATE_LIMIT_MAX_PER_MINUTE": ("session", "rate_limit.max_per_minute"),
+    "AAWS_SESSION_RATE_LIMIT_BURST": ("session", "rate_limit.burst"),
 }
 
 
@@ -96,7 +117,14 @@ def _apply_env_overrides(config_dict: dict) -> dict:  # type: ignore[type-arg]
         if val is not None:
             if section not in config_dict:
                 config_dict[section] = {}
-            config_dict[section][field] = val
+            # Support dotted field paths (e.g. "rate_limit.enabled")
+            parts = field.split(".")
+            target = config_dict[section]
+            for part in parts[:-1]:
+                if part not in target:
+                    target[part] = {}
+                target = target[part]
+            target[parts[-1]] = val
     return config_dict
 
 

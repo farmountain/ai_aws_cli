@@ -1,0 +1,52 @@
+{
+  "name": "aaws",
+  "display_name": "AI-Assisted AWS CLI",
+  "description": "Natural language interface to AWS with built-in safety tiers. Classify commands by risk level (0-3), execute them safely, format output as readable tables, browse known safety tiers, and verify AWS CLI setup.",
+  "version": "0.3.0",
+  "mcp_server": {
+    "command": "python",
+    "args": ["-m", "aaws.mcp_server"],
+    "transport": "stdio",
+    "env": {}
+  },
+  "tools": [
+    {
+      "name": "classify_aws_command",
+      "description": "Classify an AWS CLI command into a safety risk tier (0-3)"
+    },
+    {
+      "name": "execute_aws_command",
+      "description": "Execute an AWS CLI command via safe subprocess"
+    },
+    {
+      "name": "format_aws_output",
+      "description": "Format JSON output into readable tables or cards"
+    },
+    {
+      "name": "list_safety_tiers",
+      "description": "Browse known command risk tiers"
+    },
+    {
+      "name": "execute_confirmed_aws_command",
+      "description": "Execute a pre-confirmed AWS CLI command after user approval"
+    },
+    {
+      "name": "check_aws_environment",
+      "description": "Verify AWS CLI installation and credential configuration"
+    }
+  ],
+  "capabilities": {
+    "tools": true,
+    "resources": false,
+    "prompts": false
+  },
+  "permissions": {
+    "network": false,
+    "filesystem": false,
+    "subprocess": true
+  },
+  "requirements": {
+    "python": ">=3.11",
+    "packages": ["aaws[mcp]>=0.3.0"]
+  }
+}

@@ -247,6 +247,152 @@ TIER_TABLE: dict[str, int] = {
     "aws organizations delete-organization": 3,
     "aws organizations remove-account-from-organization": 3,
     "aws organizations leave-organization": 3,
+
+    # ── CloudWatch Logs ──────────────────────────────────────────────────────
+    "aws logs describe-": 0,
+    "aws logs get-": 0,
+    "aws logs list-": 0,
+    "aws logs filter-": 0,
+    "aws logs create-": 1,
+    "aws logs put-": 1,
+    "aws logs tag-": 1,
+    "aws logs delete-log-group": 2,
+    "aws logs delete-log-stream": 2,
+
+    # ── Kinesis ──────────────────────────────────────────────────────────────
+    "aws kinesis describe-": 0,
+    "aws kinesis list-": 0,
+    "aws kinesis get-": 0,
+    "aws kinesis create-stream": 1,
+    "aws kinesis put-record": 1,
+    "aws kinesis put-records": 1,
+    "aws kinesis update-": 1,
+    "aws kinesis add-tags-": 1,
+    "aws kinesis delete-stream": 2,
+    "aws kinesis remove-tags-": 2,
+
+    # ── ElastiCache ──────────────────────────────────────────────────────────
+    "aws elasticache describe-": 0,
+    "aws elasticache list-": 0,
+    "aws elasticache create-": 1,
+    "aws elasticache modify-": 1,
+    "aws elasticache add-tags-": 1,
+    "aws elasticache delete-cache-cluster": 2,
+    "aws elasticache delete-replication-group": 2,
+    "aws elasticache delete-snapshot": 2,
+
+    # ── Auto Scaling ─────────────────────────────────────────────────────────
+    "aws autoscaling describe-": 0,
+    "aws autoscaling create-": 1,
+    "aws autoscaling update-": 1,
+    "aws autoscaling set-": 1,
+    "aws autoscaling put-": 1,
+    "aws autoscaling attach-": 1,
+    "aws autoscaling delete-auto-scaling-group": 2,
+    "aws autoscaling delete-launch-configuration": 2,
+    "aws autoscaling delete-policy": 2,
+    "aws autoscaling detach-": 2,
+
+    # ── Cognito Identity Provider ────────────────────────────────────────────
+    "aws cognito-idp describe-": 0,
+    "aws cognito-idp list-": 0,
+    "aws cognito-idp get-": 0,
+    "aws cognito-idp create-": 1,
+    "aws cognito-idp update-": 1,
+    "aws cognito-idp admin-create-": 1,
+    "aws cognito-idp set-": 1,
+    "aws cognito-idp delete-user-pool": 2,
+    "aws cognito-idp delete-user": 2,
+    "aws cognito-idp admin-delete-": 2,
+
+    # ── Redshift ─────────────────────────────────────────────────────────────
+    "aws redshift describe-": 0,
+    "aws redshift list-": 0,
+    "aws redshift create-cluster": 1,
+    "aws redshift modify-cluster": 1,
+    "aws redshift create-snapshot": 1,
+    "aws redshift restore-": 1,
+    "aws redshift delete-cluster": 2,
+    "aws redshift delete-snapshot": 2,
+
+    # ── ELBv2 (ALB/NLB) ─────────────────────────────────────────────────────
+    "aws elbv2 describe-": 0,
+    "aws elbv2 create-": 1,
+    "aws elbv2 modify-": 1,
+    "aws elbv2 register-targets": 1,
+    "aws elbv2 set-": 1,
+    "aws elbv2 add-": 1,
+    "aws elbv2 delete-load-balancer": 2,
+    "aws elbv2 delete-target-group": 2,
+    "aws elbv2 delete-listener": 2,
+    "aws elbv2 deregister-targets": 2,
+    "aws elbv2 remove-": 2,
+
+    # ── API Gateway ──────────────────────────────────────────────────────────
+    "aws apigateway get-": 0,
+    "aws apigateway create-": 1,
+    "aws apigateway put-": 1,
+    "aws apigateway update-": 1,
+    "aws apigateway import-": 1,
+    "aws apigateway delete-rest-api": 2,
+    "aws apigateway delete-stage": 2,
+    "aws apigateway delete-deployment": 2,
+    "aws apigateway delete-resource": 2,
+
+    # ── SageMaker ────────────────────────────────────────────────────────────
+    "aws sagemaker describe-": 0,
+    "aws sagemaker list-": 0,
+    "aws sagemaker create-": 1,
+    "aws sagemaker update-": 1,
+    "aws sagemaker start-": 1,
+    "aws sagemaker delete-endpoint": 2,
+    "aws sagemaker delete-model": 2,
+    "aws sagemaker delete-notebook-instance": 2,
+    "aws sagemaker stop-": 2,
+
+    # ── Glue ─────────────────────────────────────────────────────────────────
+    "aws glue get-": 0,
+    "aws glue list-": 0,
+    "aws glue batch-get-": 0,
+    "aws glue create-": 1,
+    "aws glue update-": 1,
+    "aws glue start-": 1,
+    "aws glue put-": 1,
+    "aws glue delete-database": 2,
+    "aws glue delete-table": 2,
+    "aws glue delete-crawler": 2,
+    "aws glue delete-job": 2,
+    "aws glue batch-delete-": 2,
+
+    # ── Step Functions ───────────────────────────────────────────────────────
+    "aws stepfunctions describe-": 0,
+    "aws stepfunctions list-": 0,
+    "aws stepfunctions get-": 0,
+    "aws stepfunctions create-": 1,
+    "aws stepfunctions update-": 1,
+    "aws stepfunctions start-": 1,
+    "aws stepfunctions tag-": 1,
+    "aws stepfunctions delete-state-machine": 2,
+    "aws stepfunctions delete-activity": 2,
+    "aws stepfunctions stop-execution": 2,
+    "aws stepfunctions untag-": 2,
+
+    # ── Elastic Beanstalk ────────────────────────────────────────────────────
+    "aws elasticbeanstalk describe-": 0,
+    "aws elasticbeanstalk list-": 0,
+    "aws elasticbeanstalk create-": 1,
+    "aws elasticbeanstalk update-": 1,
+    "aws elasticbeanstalk terminate-environment": 2,
+    "aws elasticbeanstalk delete-application": 2,
+    "aws elasticbeanstalk delete-application-version": 2,
+
+    # ── STS ──────────────────────────────────────────────────────────────────
+    "aws sts get-": 0,
+    "aws sts decode-": 0,
+    "aws sts assume-role": 1,
+    "aws sts assume-role-with-": 1,
+    "aws sts get-federation-token": 1,
+    "aws sts get-session-token": 1,
 }
 
 # Additional substring patterns that always force tier 3.

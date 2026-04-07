@@ -15,6 +15,9 @@ def run_session(config: object, profile: str, region: str) -> None:
     Maintains conversation history in-process (never written to disk).
     History is bounded to the last 10 exchanges to keep LLM context manageable.
     """
+    import time as _time  # noqa: PLC0415
+
+    from .audit import AuditConfig, AuditEntry, append as audit_append  # noqa: PLC0415
     from .errors import (  # noqa: PLC0415
         AawsError,
         ProtectedProfileError,
@@ -27,7 +30,25 @@ def run_session(config: object, profile: str, region: str) -> None:
     from .safety.classifier import apply_safety_gate, classify  # noqa: PLC0415
     from .translator import translate  # noqa: PLC0415
 
+    from .rate_limit import RateLimiter  # noqa: PLC0415
+
     provider = get_provider(config)
+
+    # Rate limiter
+    session_cfg = getattr(config, "session", None)
+    rl_cfg = getattr(session_cfg, "rate_limit", None) if session_cfg else None
+    rate_limiter = RateLimiter(
+        max_per_minute=getattr(rl_cfg, "max_per_minute", 20) if rl_cfg else 20,
+        burst=getattr(rl_cfg, "burst", 5) if rl_cfg else 5,
+        enabled=getattr(rl_cfg, "enabled", True) if rl_cfg else True,
+    )
+
+    audit_cfg_section = getattr(config, "audit", None)
+    audit_cfg = AuditConfig(
+        enabled=getattr(audit_cfg_section, "enabled", True) if audit_cfg_section else True,
+        path=getattr(audit_cfg_section, "path", None) if audit_cfg_section else None,
+        max_size_mb=getattr(audit_cfg_section, "max_size_mb", 10) if audit_cfg_section else 10,
+    )
     history: list[dict[str, str]] = []
 
     # ── Session header ────────────────────────────────────────────────────────
@@ -55,6 +76,15 @@ def run_session(config: object, profile: str, region: str) -> None:
         if user_input.lower() in ("exit", "quit"):
             console.print("[dim]Goodbye.[/dim]")
             break
+
+        # Rate-limit check
+        allowed, retry_after = rate_limiter.try_acquire()
+        if not allowed:
+            console.print(
+                f"[bold yellow]Rate limited.[/bold yellow] "
+                f"Try again in {retry_after:.0f}s."
+            )
+            continue
 
         # Translate NL → command (pass bounded history)
         try:
@@ -97,8 +127,34 @@ def run_session(config: object, profile: str, region: str) -> None:
             console.print("[dim]Cancelled.[/dim]")
             continue
 
-        # Execute
-        result = execute(response.command)
+        # Execute with audit
+        start = _time.monotonic()
+        exit_code = 0
+        try:
+            result = execute(response.command)
+            exit_code = result.exit_code
+        except KeyboardInterrupt:
+            exit_code = -2
+            raise
+        except Exception:
+            exit_code = -1
+            raise
+        finally:
+            if audit_cfg.enabled:
+                duration_ms = int((_time.monotonic() - start) * 1000)
+                audit_append(
+                    AuditEntry(
+                        command=response.command,
+                        tier=tier,
+                        profile=profile,
+                        region=region,
+                        exit_code=exit_code,
+                        success=exit_code == 0,
+                        mode="session",
+                        duration_ms=duration_ms,
+                    ),
+                    audit_cfg,
+                )
 
         # Update history — include execution output so the LLM can resolve
         # follow-up references like "show details about the first one"
